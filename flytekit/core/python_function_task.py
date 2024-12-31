@@ -239,6 +239,7 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
         then proceed to be executed.
         """
         # TODO: circular import
+        logger.info(f"Compiling workflow with kwargs: {kwargs}")
         from flytekit.core.task import ReferenceTask
 
         if not ctx.compilation_state:
@@ -317,7 +318,7 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
 
             return dj_spec
 
-    def dynamic_execute(self, task_function: Callable, **kwargs) -> Any:
+
         """
         By the time this function is invoked, the local_execute function should have unwrapped the Promises and Flyte
         literal wrappers so that the kwargs we are working with here are now Python native literal values. This
@@ -329,6 +330,9 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
         When running for real in production, the task would stop after the compilation step, and then create a file
         representing that newly generated workflow, instead of executing it.
         """
+        logger.info(f"Dynamic execute kwargs details:")
+        for key, value in kwargs.items():
+            logger.error(f"  {key}: {type(value)} = {value}")
         ctx = FlyteContextManager.current_context()
         if ctx.execution_state and ctx.execution_state.is_local_execution():
             # The rest of this function mimics the local_execute of the workflow. We can't use the workflow
