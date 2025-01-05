@@ -88,9 +88,8 @@ class DynamicLiteralCache:
         return cls._cache.get(key)
 
     @classmethod
-    def set(cls, key: str, literal: _literal_models.Literal):
-        """Store literal in cache"""
-        cls._cache[key] = literal
+    def set(cls, key: str, literal: _literal_models.Literal, original_value: Any) -> None:
+        cls._cache[key] = (literal, original_value)
 
     @classmethod
     def clear(cls):
@@ -246,6 +245,7 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
             return f"{self.instantiated_in}.{self._name}"
         return self._name
 
+    # Add this method to PythonFunctionTask class
     def _cache_or_translate_inputs(
             self, ctx: FlyteContext, python_inputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -280,6 +280,7 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
             # Cache the newly translated literals along with original values
             for key, literal in translated_literals.items():
                 cache_key = literal_cache.get_cache_key(python_inputs[key])
+                # Fixed call to set() with correct number of arguments
                 literal_cache.set(cache_key, literal, python_inputs[key])
                 cached_values[key] = python_inputs[key]
 
