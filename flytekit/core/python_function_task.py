@@ -69,7 +69,7 @@ T = TypeVar("T")
 class DynamicLiteralCache:
     """Cache for storing serialized literals in dynamic workflows"""
     _instance = None
-    _cache: Dict[str, _literal_models.Literal] = {}
+    _cache: Dict[str, Tuple[_literal_models.Literal, Any]] = {}
 
     def __new__(cls):
         if cls._instance is None:
@@ -246,24 +246,25 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
             return f"{self.instantiated_in}.{self._name}"
         return self._name
 
-    # Add this method inside the PythonFunctionTask class
     def _cache_or_translate_inputs(
             self, ctx: FlyteContext, python_inputs: Dict[str, Any]
-    ) -> Dict[str, _literal_models.Literal]:
+    ) -> Dict[str, Any]:
         """
-        Either retrieve cached literals or translate and cache new ones
+        Either retrieve cached literals or translate and cache new ones.
+        Returns the original Python values to maintain type compatibility.
         """
-        cached_literals = {}
+        cached_values = {}
         new_inputs = {}
         literal_cache = DynamicLiteralCache()
 
         # Check cache for each input
         for key, value in python_inputs.items():
             cache_key = literal_cache.get_cache_key(value)
-            cached_literal = literal_cache.get(cache_key)
+            cached_entry = literal_cache.get(cache_key)
 
-            if cached_literal is not None:
-                cached_literals[key] = cached_literal
+            if cached_entry is not None:
+                _, original_value = cached_entry
+                cached_values[key] = original_value
             else:
                 new_inputs[key] = value
 
@@ -276,13 +277,13 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
                 native_types=self.python_interface.inputs,
             )
 
-            # Cache the newly translated literals
+            # Cache the newly translated literals along with original values
             for key, literal in translated_literals.items():
                 cache_key = literal_cache.get_cache_key(python_inputs[key])
-                literal_cache.set(cache_key, literal)
-                cached_literals[key] = literal
+                literal_cache.set(cache_key, literal, python_inputs[key])
+                cached_values[key] = python_inputs[key]
 
-        return cached_literals
+        return cached_values
 
     def execute(self, **kwargs) -> Any:
         """
