@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import os
 import signal
@@ -24,7 +25,7 @@ from abc import ABC
 from collections import OrderedDict
 from contextlib import suppress
 from enum import Enum
-from typing import Any, Callable, Iterable, List, Optional, Tuple, TypeVar, Union, cast
+from typing import Any, Callable, Iterable, List, Optional, Tuple, TypeVar, Union, cast, Dict
 
 from flytekit.configuration import ImageConfig, SerializationSettings
 from flytekit.core import launch_plan as _annotated_launch_plan
@@ -93,6 +94,37 @@ class PythonInstanceTask(PythonAutoContainerTask[T], ABC):  # type: ignore
         """
         super().__init__(name=name, task_config=task_config, task_type=task_type, task_resolver=task_resolver, **kwargs)
 
+# Add this after the imports in python_function_task.py
+class DynamicLiteralCache:
+    """Cache for storing serialized literals in dynamic workflows"""
+    _instance = None
+    _cache: Dict[str, _literal_models.Literal] = {}
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(DynamicLiteralCache, cls).__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def get_cache_key(cls, value: Any) -> str:
+        """Generate a cache key for the given value"""
+        value_str = str(value)
+        return hashlib.md5(value_str.encode()).hexdigest()
+
+    @classmethod
+    def get(cls, key: str) -> Optional[_literal_models.Literal]:
+        """Get literal from cache"""
+        return cls._cache.get(key)
+
+    @classmethod
+    def set(cls, key: str, literal: _literal_models.Literal):
+        """Store literal in cache"""
+        cls._cache[key] = literal
+
+    @classmethod
+    def clear(cls):
+        """Clear the cache"""
+        cls._cache.clear()
 
 class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
     """
@@ -212,6 +244,44 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
         if self.instantiated_in and self.instantiated_in not in self._name:
             return f"{self.instantiated_in}.{self._name}"
         return self._name
+
+    # Add this method inside the PythonFunctionTask class
+    def _cache_or_translate_inputs(
+            self, ctx: FlyteContext, python_inputs: Dict[str, Any]
+    ) -> Dict[str, _literal_models.Literal]:
+        """
+        Either retrieve cached literals or translate and cache new ones
+        """
+        cached_literals = {}
+        new_inputs = {}
+        literal_cache = DynamicLiteralCache()
+
+        # Check cache for each input
+        for key, value in python_inputs.items():
+            cache_key = literal_cache.get_cache_key(value)
+            cached_literal = literal_cache.get(cache_key)
+
+            if cached_literal is not None:
+                cached_literals[key] = cached_literal
+            else:
+                new_inputs[key] = value
+
+        # Translate and cache new inputs
+        if new_inputs:
+            translated_literals = translate_inputs_to_literals(
+                ctx,
+                new_inputs,
+                flyte_interface_types=self.interface.inputs,
+                native_types=self.python_interface.inputs,
+            )
+
+            # Cache the newly translated literals
+            for key, literal in translated_literals.items():
+                cache_key = literal_cache.get_cache_key(python_inputs[key])
+                literal_cache.set(cache_key, literal)
+                cached_literals[key] = literal
+
+        return cached_literals
 
     def execute(self, **kwargs) -> Any:
         """
@@ -375,7 +445,8 @@ class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
             return _literal_models.LiteralMap(literals=wf_outputs_as_literal_dict)
 
         if ctx.execution_state and ctx.execution_state.mode == ExecutionState.Mode.TASK_EXECUTION:
-            return self.compile_into_workflow(ctx, task_function, **kwargs)
+            cached_literals = self._cache_or_translate_inputs(ctx, kwargs)
+            return self.compile_into_workflow(ctx, task_function, **cached_literals)
 
         if ctx.execution_state and ctx.execution_state.mode == ExecutionState.Mode.LOCAL_TASK_EXECUTION:
             return task_function(**kwargs)
