@@ -65,35 +65,6 @@ from flytekit.utils.asyn import loop_manager
 
 T = TypeVar("T")
 
-
-class PythonInstanceTask(PythonAutoContainerTask[T], ABC):  # type: ignore
-    """
-    This class should be used as the base class for all Tasks that do not have a user defined function body, but have
-    a platform defined execute method. (Execute needs to be overridden). This base class ensures that the module loader
-    will invoke the right class automatically, by capturing the module name and variable in the module name.
-
-    .. code-block: python
-
-        x = MyInstanceTask(name="x", .....)
-
-        # this can be invoked as
-        x(a=5) # depending on the interface of the defined task
-
-    """
-
-    def __init__(
-        self,
-        name: str,
-        task_config: T,
-        task_type: str = "python-task",
-        task_resolver: Optional[TaskResolverMixin] = None,
-        **kwargs,
-    ):
-        """
-        Please see class level documentation.
-        """
-        super().__init__(name=name, task_config=task_config, task_type=task_type, task_resolver=task_resolver, **kwargs)
-
 # Add this after the imports in python_function_task.py
 class DynamicLiteralCache:
     """Cache for storing serialized literals in dynamic workflows"""
@@ -125,6 +96,36 @@ class DynamicLiteralCache:
     def clear(cls):
         """Clear the cache"""
         cls._cache.clear()
+
+class PythonInstanceTask(PythonAutoContainerTask[T], ABC):  # type: ignore
+    """
+    This class should be used as the base class for all Tasks that do not have a user defined function body, but have
+    a platform defined execute method. (Execute needs to be overridden). This base class ensures that the module loader
+    will invoke the right class automatically, by capturing the module name and variable in the module name.
+
+    .. code-block: python
+
+        x = MyInstanceTask(name="x", .....)
+
+        # this can be invoked as
+        x(a=5) # depending on the interface of the defined task
+
+    """
+
+    def __init__(
+        self,
+        name: str,
+        task_config: T,
+        task_type: str = "python-task",
+        task_resolver: Optional[TaskResolverMixin] = None,
+        **kwargs,
+    ):
+        """
+        Please see class level documentation.
+        """
+        super().__init__(name=name, task_config=task_config, task_type=task_type, task_resolver=task_resolver, **kwargs)
+
+
 
 class PythonFunctionTask(PythonAutoContainerTask[T]):  # type: ignore
     """
